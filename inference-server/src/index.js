@@ -1,20 +1,98 @@
-import { Hono } from 'hono';
-import { streamText } from 'hono/streaming';
-import { events } from 'fetch-event-stream';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
+import { swaggerUI } from '@hono/swagger-ui'
 
-const app = new Hono();
+const app = new OpenAPIHono();
+  
+  app.get(
+	'/',
+	swaggerUI({
+	  url: '/doc'
+	})
+  )
+  
+  app.doc('/doc', {
+	info: {
+	  title: 'An API',
+	  version: 'v1'
+	},
+	openapi: '3.1.0'
+  })
 
-app.get('/', async(c) => {
-	return c.html(`<html>
-	<head>
-		<title>Admin Panel</title>
-	</head>
-	<body>
-		
-	</body>
-	</html>`);
+// OpenAPI route for getting a random lofi clip
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/lofi',
+    responses: {
+      200: {
+        description: 'Returns a random lofi music clip',
+        content: {
+          'audio/wav': {
+            schema: {
+              type: 'string',
+              format: 'binary'
+            }
+          }
+        }
+      },
+      500: {
+        description: 'Failed to generate lofi clip',
+        content: {
+          'text/plain': {
+            schema: {
+              type: 'string'
+            }
+          }
+        }
+      }
+    }
+  }),
+  async (c) => {
+    // ... existing /lofi route logic ...
+  }
+)
+
+// OpenAPI route for generating a new lofi clip
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/generate-lofi',
+    responses: {
+      200: {
+        description: 'Generates and caches a new lofi clip',
+        content: {
+          'text/plain': {
+            schema: {
+              type: 'string'
+            }
+          }
+        }
+      }
+    }
+  }),
+  async (c) => {
+    // ... existing /generate-lofi route logic ...
+  }
+)
+
+// Serve Swagger UI
+app.get('/ui', swaggerUI({ url: '/doc' }))
+
+// Serve OpenAPI documentation
+app.doc('/doc', {
+  openapi: '3.0.0',
+  info: {
+    title: 'Lofi Music Generator API',
+    version: '1.0.0',
+    description: 'API for generating and serving lofi music clips'
+  },
+  servers: [
+    {
+      url: 'https://your-worker-url.workers.dev',
+      description: 'Production server'
+    }
+  ]
 })
-
 
 // New function to generate a lofi music clip using Hugging Face Inference API
 async function generateLofiClip(env, prompt) {
