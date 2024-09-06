@@ -1,0 +1,32 @@
+---
+import Layout from '../layouts/Layout.astro';
+import RadioPlayer from '../components/RadioPlayer';
+
+const streamUrl = 'http://127.0.0.1:8787/lofi';
+---
+
+<Layout title="Radio Web App">
+  <main>
+    <h1>Welcome to My Radio App</h1>
+    <RadioPlayer client:load streamUrl={streamUrl} />
+  </main>
+</Layout>
+
+<style>
+  main {
+    margin: auto;
+    padding: 1rem;
+    width: 800px;
+    max-width: calc(100% - 2rem);
+    color: white;
+    font-size: 20px;
+    line-height: 1.6;
+  }
+  h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    margin-bottom: 1em;
+  }
+</style>
