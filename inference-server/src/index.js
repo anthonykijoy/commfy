@@ -7,70 +7,92 @@ const app = new Hono();
 app.get('/', async(c) => {
 	return c.html(`<html>
 	<head>
-		<title>Hello Hono Examples</title>
+		<title>Admin Panel</title>
 	</head>
 	<body>
-		<ul>
-			<li><a href="/standard">Standard AI usage</a></li>
-			<li><a href="/stream-event-source">Streaming - EventSource</a></li>
-			<li><a href="/stream-text">Streaming - Text</a></li>
-		</ul>
+		
 	</body>
 	</html>`);
 })
 
-app.get('/standard', async (c) => {
-	const msg = c.req.query('msg') || 'I am so going to win';
-	const result = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-		messages: [
-			{ role: 'system', content: 'You are a poet. Every response should rhyme with what the user said' },
-			{ role: 'user', content: msg },
-		],
-	});
-	return c.json(result);
-});
 
-app.get('/stream-event-source', async (c) => {
-	const msg = c.req.query('msg') || 'Can you explain RLHF?';
-	const eventSourceStream = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-		messages: [
-			{
-				role: 'system',
-				content: 'You love tacos. Anything the user says, you make analogies regarding tacos.',
-			},
-			{ role: 'user', content: msg },
-		],
-		stream: true,
-	});
-	return new Response(eventSourceStream, {
+// New function to generate a lofi music clip using Hugging Face Inference API
+async function generateLofiClip(env, prompt) {
+	const API_URL = "https://api-inference.huggingface.co/models/facebook/musicgen-small";
+	const response = await fetch(API_URL, {
+		method: 'POST',
 		headers: {
-			'Content-Type': 'text/event-stream',
+			'Authorization': `Bearer ${env.HUGGINGFACE_API_KEY}`,
+			'Content-Type': 'application/json'
 		},
+		body: JSON.stringify({ inputs: prompt })
 	});
-});
 
-app.get('/stream-text', async (c) => {
-	const msg = c.req.query('msg') || 'What is the meaning of life?';
-	const eventSourceStream = await c.env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-		messages: [
-			{
-				role: 'system',
-				content:
-					'You are psychadelic man. Everything you say is a stream of consciousness, like a great beat poet. Respond to the user in a long drawn out bizarre way',
-			},
-			{ role: 'user', content: msg },
-		],
-		stream: true,
-	});
-	return streamText(c, async (stream) => {
-		const chunks = events(new Response(eventSourceStream));
-		for await (const chunk of chunks) {
-			if (chunk.data !== '[DONE]') {
-				const data = JSON.parse(chunk.data);
-				stream.write(data.response);
-			}
+	if (!response.ok) {
+		const errorText = await response.text();
+		throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+	}
+
+	return new Uint8Array(await response.arrayBuffer());
+}
+
+// Array of prompts for different lofi vibes
+const lofiPrompts = [
+	"Calm and relaxing lofi beat with soft piano and gentle rain sounds",
+	"Upbeat lofi hip-hop with jazzy guitar and vinyl crackle",
+	"Dreamy lofi atmosphere with synth pads and bird chirps",
+	"Chill lofi groove with mellow bass and coffee shop ambience",
+	"Nostalgic lofi melody with retro game sounds and soft strings"
+];
+
+// Function to generate and cache a single lofi clip
+async function generateAndCacheLofiClip(env, index) {
+	const prompt = lofiPrompts[index];
+	const clipKey = `lofi_clip_${index}`;
+
+	try {
+		const audioData = await generateLofiClip(env, prompt);
+		if (audioData.length === 0) {
+			throw new Error('Received empty audio data');
+		}
+		await env.LOFI_CACHE.put(clipKey, audioData, { expirationTtl: 86400 }); // Cache for 24 hours
+		console.log(`Generated and cached lofi clip: ${clipKey}`);
+	} catch (error) {
+		console.error(`Error generating lofi clip: ${clipKey}`, error.message);
+		// You might want to implement a retry mechanism or alert system here
+	}
+}
+
+// New route to get a random lofi clip
+app.get('/lofi', async (c) => {
+	const clipIndex = Math.floor(Math.random() * lofiPrompts.length);
+	const clipKey = `lofi_clip_${clipIndex}`;
+	
+	let audioData = await c.env.LOFI_CACHE.get(clipKey, 'arrayBuffer');
+
+	if (!audioData) {
+		// If the clip doesn't exist, generate it
+		await generateAndCacheLofiClip(c.env, clipIndex);
+		audioData = await c.env.LOFI_CACHE.get(clipKey, 'arrayBuffer');
+	}
+
+	if (!audioData) {
+		return c.text('Failed to generate lofi clip', 500);
+	}
+
+	return new Response(audioData, {
+		headers: {
+			'Content-Type': 'audio/wav',
+			'Content-Disposition': 'attachment; filename="lofi_clip.wav"'
 		}
 	});
+});
+
+// Scheduled task to generate lofi clips (to be set up in Cloudflare dashboard)
+app.get('/generate-lofi', async (c) => {
+	const index = Math.floor(Math.random() * lofiPrompts.length);
+	await generateAndCacheLofiClip(c.env, index);
+	return c.text('Lofi clip generated and cached');
 });
 
 export default app;
